@@ -1,12 +1,15 @@
+"""
+  配置
+"""
 from yacs.config import CfgNode as CN
 from yacs.config import load_cfg
 
-
+# note: _C 表示 CfgNode配置对象
 _C = CN()
 
-# if set to @, the filename of config will be used by default
+# if set to @, the filename of config will be used by default 配置文件使用默认
 _C.OUTPUT_DIR = "@"
-# Automatically resume weights from last checkpoints
+# Automatically resume weights from last checkpoints 自动保存权重
 _C.AUTO_RESUME = True
 # For reproducibility...but not really because modern fast GPU libraries use
 # non-deterministic op implementations
@@ -23,9 +26,9 @@ _C.DATA.NUM_WORKERS = 1
 
 _C.DATA.TRAIN = CN()
 _C.DATA.TRAIN.ROOT_DIR = ""
-_C.DATA.TRAIN.NUM_VIEW = 3
-_C.DATA.TRAIN.NUM_VIRTUAL_PLANE = 48
-_C.DATA.TRAIN.INTER_SCALE = 4.24
+_C.DATA.TRAIN.NUM_VIEW = 3 #  视图数
+_C.DATA.TRAIN.NUM_VIRTUAL_PLANE = 48 # 虚拟平面
+_C.DATA.TRAIN.INTER_SCALE = 4.24 
 
 
 _C.DATA.VAL = CN()
@@ -160,9 +163,11 @@ def load_cfg_from_file(cfg_filename):
         CfgNode: loaded configuration
 
     """
+    # step: 1 读取配置文件
     with open(cfg_filename, "r") as f:
         cfg = load_cfg(f)
 
+    # step: 2 将配置文件内容进行合并
     cfg_template = _C
     cfg_template.merge_from_other_cfg(cfg)
     return cfg_template

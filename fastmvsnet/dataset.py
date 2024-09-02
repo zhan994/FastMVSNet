@@ -153,8 +153,11 @@ class DTU_Train_Val_Set(Dataset):
     def __len__(self):
         return len(self.path_list)
 
-
+"""
+  DTU测试数据
+"""
 class DTU_Test_Set(Dataset):
+    # 数据集合 & 7种光照
     test_set = [1, 4, 9, 10, 11, 12, 13, 15, 23, 24, 29, 32, 33, 34, 48, 49, 62, 75, 77,
                 110, 114, 118]
     test_lighting_set = [3]
@@ -162,6 +165,7 @@ class DTU_Test_Set(Dataset):
     mean = torch.tensor([1.97145182, -1.52387525, 651.07223895])
     std = torch.tensor([84.45612252, 93.22252387, 80.08551226])
 
+    # note: 视图数，参考图像id，相关联源图像个数，相关联源图像id，相似评分
     cluster_file_path = "Cameras/pair.txt"
 
     def __init__(self, root_dir, dataset_name,
@@ -171,7 +175,7 @@ class DTU_Test_Set(Dataset):
                  interval_scale=1.6,
                  base_image_size=64,
                  depth_folder=""):
-
+        # note: 测试不需要深度图真值，depth_folder为空；其余在配置文件中
         self.root_dir = root_dir
         self.num_view = num_view
         self.interval_scale = interval_scale
@@ -179,27 +183,34 @@ class DTU_Test_Set(Dataset):
         self.base_image_size = base_image_size
         self.height = height
         self.width = width
-        self.depth_folder = depth_folder
+        self.depth_folder = depth_folder  
 
+        # step: 读取pair.txt中的ref信息
         self.cluster_file_path = osp.join(root_dir, self.cluster_file_path)
         self.cluster_list = open(self.cluster_file_path).read().split()
+        print("self.cluster_list", self.cluster_list)
+
         # self.cluster_list =
         assert (dataset_name in ["test"]), "Unknown dataset_name: {}".format(dataset_name)
 
         self.data_set = self.test_set
         self.lighting_set = self.test_lighting_set
 
+        # step: 导入数据集的路径
         self.path_list = self._load_dataset(self.data_set, self.lighting_set)
 
     def _load_dataset(self, dataset, lighting_set):
         path_list = []
+        # note: 按照开始的 test_set 进行遍历
         for ind in dataset:
+            # step: 图片信息、内外参信息、深度信息
             image_folder = osp.join(self.root_dir, "Eval/Rectified/scan{}".format(ind))
             cam_folder = osp.join(self.root_dir, "Cameras")
             depth_folder = osp.join(self.depth_folder, "scan{}".format(ind))
 
+            # note: 按照开始的光照情况 lighting_set 进行遍历
             for lighting_ind in lighting_set:
-                # for each reference image
+                # note: 每个ref对应一张depth，self.cluster_list[0]表示图片数
                 for p in range(0, int(self.cluster_list[0])):
                     paths = {}
                     # pts_paths = []
@@ -207,19 +218,21 @@ class DTU_Test_Set(Dataset):
                     view_cam_paths = []
                     view_depth_paths = []
 
-                    # ref image
+                    # step: 每隔22个对应一个ref的索引，找到对应的image、cam和depth
                     ref_index = int(self.cluster_list[22 * p + 1])
                     ref_image_path = osp.join(
                         image_folder, "rect_{:03d}_{}_r5000.png".format(ref_index + 1, lighting_ind))
                     ref_cam_path = osp.join(cam_folder, "{:08d}_cam.txt".format(ref_index))
                     ref_depth_path = osp.join(depth_folder, "depth_map_{:04d}.pfm".format(ref_index))
 
+                    # step: view_相关列表加入数据
                     view_image_paths.append(ref_image_path)
                     view_cam_paths.append(ref_cam_path)
                     view_depth_paths.append(ref_depth_path)
 
-                    # view images
+                    # note: num_view相邻的源图像个数，一般为pair评分最高的几个，论文里默认为5.
                     for view in range(self.num_view - 1):
+                        # step: 每隔22个对应一个ref的索引，第3个开始每2个找到对应的image、cam和depth
                         view_index = int(self.cluster_list[22 * p + 2 * view + 3])
                         view_image_path = osp.join(
                             image_folder, "rect_{:03d}_{}_r5000.png".format(view_index + 1, lighting_ind))
@@ -232,6 +245,7 @@ class DTU_Test_Set(Dataset):
                     paths["view_cam_paths"] = view_cam_paths
                     paths["view_depth_paths"] = view_depth_paths
 
+                    # step: 当前ref对应的一组图片的字典加入path_list
                     path_list.append(paths)
 
         return path_list
@@ -242,6 +256,7 @@ class DTU_Test_Set(Dataset):
 
         images = []
         cams = []
+        # step: 一组num_view个ref，逐个读取
         for view in range(self.num_view):
             while True:
                 try:
@@ -258,6 +273,7 @@ class DTU_Test_Set(Dataset):
             images.append(image)
             cams.append(cam)
 
+        # step: depth
         if self.depth_folder:
             for depth_path in paths["view_depth_paths"]:
                 depth_image = io.load_pfm(depth_path)[0]
@@ -268,6 +284,7 @@ class DTU_Test_Set(Dataset):
 
         ref_depth = depth_images[0].copy()
 
+        # step: h & w scale for resizer，并且以较大的比例为统一scale
         h_scale = float(self.height) / images[0].shape[0]
         w_scale = float(self.width) / images[0].shape[1]
         if h_scale > 1 or w_scale > 1:
@@ -276,25 +293,32 @@ class DTU_Test_Set(Dataset):
         resize_scale = h_scale
         if w_scale > h_scale:
             resize_scale = w_scale
+
+        # step: 尺度缩放 depth采用nearest    
         scaled_input_images, scaled_input_cams, ref_depth = scale_dtu_input(images, cams, depth_image=ref_depth,
                                                                             scale=resize_scale)
 
-        # crop to fit network
+        # step: crop to fit network
         croped_images, croped_cams, ref_depth = crop_dtu_input(scaled_input_images, scaled_input_cams,
                                                                height=self.height, width=self.width,
                                                                base_image_size=self.base_image_size,
                                                                depth_image=ref_depth)
         ref_image = croped_images[0].copy()
+
+        # step: 归一化
         for i, image in enumerate(croped_images):
             croped_images[i] = norm_image(image)
 
+        # step: 所有数据batch维度做stack
         depth_list = np.stack(depth_images, axis=0)
         img_list = np.stack(croped_images, axis=0)
         cam_params_list = np.stack(croped_cams, axis=0)
         # cam_pos_list = np.stack(camspos, axis=0)
 
-        img_list = torch.tensor(img_list).permute(0, 3, 1, 2).float()
+        # step: bhwc -> bchw
+        img_list = torch.tensor(img_list).permute(0, 3, 1, 2).float() 
         cam_params_list = torch.tensor(cam_params_list).float()
+        # step: bhw -> bhwc -> bchw
         depth_list = torch.tensor(depth_list).unsqueeze(-1).permute(0, 3, 1, 2).float()
 
         return {

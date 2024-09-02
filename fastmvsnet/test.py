@@ -78,12 +78,13 @@ def test_model(model,
 
 def test(cfg, output_dir, isCPU=False):
     logger = logging.getLogger("fastmvsnet.tester")
-    # build model
+    
+    # step: 1 build model
     model, _, _ = build_model(cfg)
     if not isCPU:
         model = nn.DataParallel(model).cuda()
 
-    # build checkpointer
+    # step: 2 build checkpointer
     checkpointer = Checkpointer(model, save_dir=output_dir)
 
     if cfg.TEST.WEIGHT:
@@ -92,7 +93,7 @@ def test(cfg, output_dir, isCPU=False):
     else:
         checkpointer.load(None, resume=True)
 
-    # build data loader
+    # step: 3 build data loader
     test_data_loader = build_data_loader(cfg, mode="test")
     start_time = time.time()
     test_model(model,
@@ -102,14 +103,18 @@ def test(cfg, output_dir, isCPU=False):
                folder=output_dir.split("/")[-1],
                isCPU=isCPU,
                )
+    
+    # step: 4 耗时
     test_time = time.time() - start_time
     logger.info("Test forward time: {:.2f}s".format(test_time))
 
 
 def main():
+    # step: 1 解析命令行
     args = parse_args()
     num_gpus = torch.cuda.device_count()
 
+    # step: 2 导入配置文件
     cfg = load_cfg_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     cfg.freeze()
@@ -117,6 +122,7 @@ def main():
 
     isCPU = args.cpu
 
+    # step: 3 创建输出文件夹
     output_dir = cfg.OUTPUT_DIR
     if output_dir:
         config_path = osp.splitext(args.config_file)[0]
@@ -124,6 +130,7 @@ def main():
         output_dir = output_dir.replace('@', config_path)
         mkdir(output_dir)
 
+    # step: 4 日志
     logger = setup_logger("fastmvsnet", output_dir, prefix="test")
     if isCPU:
         logger.info("Using CPU")
@@ -134,6 +141,7 @@ def main():
     logger.info("Loaded configuration file {}".format(args.config_file))
     logger.info("Running with config:\n{}".format(cfg))
 
+    # step: 5 测试主函数
     test(cfg, output_dir, isCPU=isCPU)
 
 

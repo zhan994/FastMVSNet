@@ -6,6 +6,9 @@ from fastmvsnet.nn.conv import *
 import numpy as np
 
 
+"""
+  特征图提取卷积， bchw -> b(4a)(h/4)(w/4)， a=base_channels
+"""
 class ImageConv(nn.Module):
     def __init__(self, base_channels, in_channels=3):
         super(ImageConv, self).__init__()
@@ -50,6 +53,7 @@ class PropagationNet(nn.Module):
 
         self.img_conv = ImageConv(base_channels)
         
+        
         self.conv1 = nn.Sequential(
             Conv2d(base_channels*4, base_channels * 4, 3, padding=1),
             Conv2d(base_channels * 4, base_channels * 2, 3, 1, padding=1),
@@ -60,6 +64,7 @@ class PropagationNet(nn.Module):
             Conv2d(base_channels * 2, base_channels * 2, 3, 1, padding=1),
         )
 
+        # b(4a)(h/4)(w/4) -> b(9)(h/4)(w/4)
         self.conv3 = nn.Sequential(
             Conv2d(base_channels * 4, base_channels * 2, 3, 1, padding=1),
             nn.Conv2d(base_channels*2, 9, 3, padding=1, bias=False)
@@ -68,7 +73,7 @@ class PropagationNet(nn.Module):
         self.unfold = nn.Unfold(kernel_size=(3,3), stride=1, padding=0)
 
     def forward(self, depth, img):
-        img_featues = self.img_conv(img)
+        img_featues = self.img_conv(img) 
         img_conv2 = img_featues["conv2"]
 
         x = self.conv3(img_conv2)
