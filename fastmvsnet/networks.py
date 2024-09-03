@@ -64,7 +64,7 @@ class PropagationNet(nn.Module):
             Conv2d(base_channels * 2, base_channels * 2, 3, 1, padding=1),
         )
 
-        # b(4a)(h/4)(w/4) -> b(9)(h/4)(w/4)
+        # (B, 4b, H/4, W/4) -> (B, 9, H/4, W/4)
         self.conv3 = nn.Sequential(
             Conv2d(base_channels * 4, base_channels * 2, 3, 1, padding=1),
             nn.Conv2d(base_channels*2, 9, 3, padding=1, bias=False)

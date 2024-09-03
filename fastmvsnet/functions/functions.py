@@ -4,6 +4,9 @@ from fastmvsnet.nn.functional import pdist
 
 
 def get_pixel_grids(height, width):
+    """
+    u,v,1 shape[3, hw]
+    """
     with torch.no_grad():
         # texture coordinate
         x_linspace = torch.linspace(0.5, width - 0.5, width).view(1, width).expand(height, width)

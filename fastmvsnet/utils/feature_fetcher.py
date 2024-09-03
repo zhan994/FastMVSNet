@@ -20,6 +20,7 @@ class FeatureFetcher(nn.Module):
         :return:
             pts_feature: torch.tensor, [B, V, C, N]
         """
+        # (B,V,C,H,W) -> (B*V, C, H, W)
         batch_size, num_view, channels, height, width = list(feature_maps.size())
         feature_maps = feature_maps.view(batch_size * num_view, channels, height, width)
 
@@ -27,37 +28,43 @@ class FeatureFetcher(nn.Module):
         cam_intrinsics = cam_intrinsics.view(curr_batch_size, 3, 3)
 
         with torch.no_grad():
+            # step: p_world -> p_cam
             num_pts = pts.size(2)
+            # (B, 3, N) -> (B, V, 3, N) -> (B*V, 3, N)
             pts_expand = pts.unsqueeze(1).contiguous().expand(batch_size, num_view, 3, num_pts) \
                 .contiguous().view(curr_batch_size, 3, num_pts)
             if cam_extrinsics is None:
-                transformed_pts = pts_expand.type(torch.float).transpose(1, 2)
+                transformed_pts = pts_expand.type(torch.float).transpose(1, 2) # (B*V, N, 3)
             else:
-                cam_extrinsics = cam_extrinsics.view(curr_batch_size, 3, 4)
-                R = torch.narrow(cam_extrinsics, 2, 0, 3)
-                t = torch.narrow(cam_extrinsics, 2, 3, 1).expand(curr_batch_size, 3, num_pts)
-                transformed_pts = torch.bmm(R, pts_expand) + t
-                transformed_pts = transformed_pts.type(torch.float).transpose(1, 2)
+                cam_extrinsics = cam_extrinsics.view(curr_batch_size, 3, 4) # (B*V, 3, 4)
+                R = torch.narrow(cam_extrinsics, 2, 0, 3) # (B*V, 3, 3)
+                t = torch.narrow(cam_extrinsics, 2, 3, 1).expand(curr_batch_size, 3, num_pts) # (B*V, 3, N)
+                transformed_pts = torch.bmm(R, pts_expand) + t # (B*V, 3, N)
+                transformed_pts = transformed_pts.type(torch.float).transpose(1, 2) # (B*V, N, 3)
+
+            # (B*V, N)
             x = transformed_pts[..., 0]
             y = transformed_pts[..., 1]
             z = transformed_pts[..., 2]
 
+            # step: 归一化相机坐标系
             normal_uv = torch.cat(
                 [torch.div(x, z).unsqueeze(-1), torch.div(y, z).unsqueeze(-1), torch.ones_like(x).unsqueeze(-1)],
-                dim=-1)
+                dim=-1) # (B*V, N, 3)
             uv = torch.bmm(normal_uv, cam_intrinsics.transpose(1, 2))
             uv = uv[:, :, :2]
 
-            grid = (uv - 0.5).view(curr_batch_size, num_pts, 1, 2)
+            # step: 像素采样 （B*V, N, 1, 2）
+            grid = (uv - 0.5).view(curr_batch_size, num_pts, 1, 2)  
             grid[..., 0] = (grid[..., 0] / float(width - 1)) * 2 - 1.0
             grid[..., 1] = (grid[..., 1] / float(height - 1)) * 2 - 1.0
 
         # pts_feature = F.grid_sample(feature_maps, grid, mode=self.mode, padding_mode='border')
         # print("without border pad-----------------------")
-        pts_feature = F.grid_sample(feature_maps, grid, mode=self.mode)
-        pts_feature = pts_feature.squeeze(3)
-
-        pts_feature = pts_feature.view(batch_size, num_view, channels, num_pts)
+        # step: pts对应feature的采样值
+        pts_feature = F.grid_sample(feature_maps, grid, mode=self.mode) # (B*V, C, N, 1)
+        pts_feature = pts_feature.squeeze(3) # (B*V, C, N)
+        pts_feature = pts_feature.view(batch_size, num_view, channels, num_pts) # (B, V, C, N)
 
         return pts_feature
 
@@ -77,6 +84,7 @@ class FeatureGradFetcher(nn.Module):
         :return:
             pts_feature: torch.tensor, [B, V, C, N]
         """
+        # (B,V,C,H,W) -> (B*V, C, H, W)
         batch_size, num_view, channels, height, width = list(feature_maps.size())
         feature_maps = feature_maps.view(batch_size * num_view, channels, height, width)
 
@@ -122,7 +130,7 @@ class FeatureGradFetcher(nn.Module):
             grid_b = grid.clone()
             grid_b[..., 1] += (1. / float(height - 1)) * 2
 
-
+        # step: 计算xy方向的feature的梯度
         def get_features(grid_uv):
             pts_feature = F.grid_sample(feature_maps, grid_uv, mode=self.mode)
             pts_feature = pts_feature.squeeze(3)

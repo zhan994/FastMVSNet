@@ -34,6 +34,7 @@ class FastMVSNet(nn.Module):
         img_list = data_batch["img_list"]
         cam_params_list = data_batch["cam_params_list"]
 
+        # step: 内外参
         cam_extrinsic = cam_params_list[:, :, 0, :3, :4].clone()  # (B, V, 3, 4)
         R = cam_extrinsic[:, :, :3, :3]
         t = cam_extrinsic[:, :, :3, 3].unsqueeze(-1)
@@ -43,6 +44,7 @@ class FastMVSNet(nn.Module):
         if isTest:
             cam_intrinsic[:, :, :2, :3] = cam_intrinsic[:, :, :2, :3] / 4.0
 
+        # step: 深度范围
         depth_start = cam_params_list[:, 0, 1, 3, 0]
         depth_interval = cam_params_list[:, 0, 1, 3, 1]
         num_depth = cam_params_list[0, 0, 1, 3, 2].long()
@@ -51,44 +53,50 @@ class FastMVSNet(nn.Module):
 
         batch_size, num_view, img_channel, img_height, img_width = list(img_list.size())
 
+        # step: 2d特征图
         coarse_feature_maps = []
         for i in range(num_view):
-            curr_img = img_list[:, i, :, :, :]
-            curr_feature_map = self.coarse_img_conv(curr_img)["conv2"]
+            curr_img = img_list[:, i, :, :, :] # (B, C, H, W)
+            curr_feature_map = self.coarse_img_conv(curr_img)["conv2"] # (B, Cf, H/4, W/4)
             coarse_feature_maps.append(curr_feature_map)
 
-        feature_list = torch.stack(coarse_feature_maps, dim=1)
+        feature_list = torch.stack(coarse_feature_maps, dim=1) # (B, V, Cf, H/4, W/4)
 
         feature_channels, feature_height, feature_width = list(curr_feature_map.size())[1:]
 
+        # step: 深度采样
         depths = []
         for i in range(batch_size):
             depths.append(torch.linspace(depth_start[i], depth_end[i], num_depth, device=img_list.device) \
                           .view(1, 1, num_depth, 1))
         depths = torch.stack(depths, dim=0)  # (B, 1, 1, D, 1)
 
-        feature_map_indices_grid = get_pixel_grids(feature_height, feature_width)
+        # step: feature_map采样uv
+        feature_map_indices_grid = get_pixel_grids(feature_height, feature_width) # (3, FH*FW)
         # print("before:", feature_map_indices_grid.size())
-        feature_map_indices_grid = feature_map_indices_grid.view(1, 3, feature_height, feature_width)[:, :, ::2, ::2].contiguous()
+        feature_map_indices_grid = feature_map_indices_grid.view(1, 3, feature_height, feature_width)[:, :, ::2, ::2].contiguous() # (1, 3, FH/2, FW/2)
         # print("after:", feature_map_indices_grid.size())
-        feature_map_indices_grid = feature_map_indices_grid.view(1, 1, 3, -1).expand(batch_size, 1, 3, -1).to(img_list.device)
+        feature_map_indices_grid = feature_map_indices_grid.view(1, 1, 3, -1).expand(batch_size, 1, 3, -1).to(img_list.device) # (B, 1, 3, FH*FW/4)
 
+        # step: 归一化相机坐标系的uv
         ref_cam_intrinsic = cam_intrinsic[:, 0, :, :].clone()
-        uv = torch.matmul(torch.inverse(ref_cam_intrinsic).unsqueeze(1), feature_map_indices_grid)  # (B, 1, 3, FH*FW)
+        uv = torch.matmul(torch.inverse(ref_cam_intrinsic).unsqueeze(1), feature_map_indices_grid)  # (B, 1, 3, FH*FW/4)
 
-        cam_points = (uv.unsqueeze(3) * depths).view(batch_size, 1, 3, -1)  # (B, 1, 3, D*FH*FW)
+        # step: 相机坐标系的点 & 世界坐标系的点
+        cam_points = (uv.unsqueeze(3) * depths).view(batch_size, 1, 3, -1)  # (B, 1, 3, D*FH*FW/4)
         world_points = torch.matmul(R_inv[:, 0:1, :, :], cam_points - t[:, 0:1, :, :]).transpose(1, 2).contiguous() \
-            .view(batch_size, 3, -1)  # (B, 3, D*FH*FW)
+            .view(batch_size, 3, -1)  # (B, 3, D*FH*FW/4)
 
         preds["world_points"] = world_points
 
         num_world_points = world_points.size(-1)
         assert num_world_points == feature_height * feature_width * num_depth / 4
 
+        # step: 获取三维点对应的feature
         point_features = self.feature_fetcher(feature_list, world_points, cam_intrinsic, cam_extrinsic)
         ref_feature = coarse_feature_maps[0]
         #print("before ref feature:", ref_feature.size())
-        ref_feature = ref_feature[:, :, ::2,::2].contiguous()
+        ref_feature = ref_feature[:, :, ::2,::2].contiguous() 
         #print("after ref feature:", ref_feature.size())
         ref_feature = ref_feature.unsqueeze(2).expand(-1, -1, num_depth, -1, -1)\
                         .contiguous().view(batch_size,feature_channels,-1)
