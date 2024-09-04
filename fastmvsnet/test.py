@@ -76,6 +76,7 @@ def test_model(model,
             eval_file_logger(data_batch, preds, curr_ref_img_path, folder)
 
 
+
 def test(cfg, output_dir, isCPU=False):
     logger = logging.getLogger("fastmvsnet.tester")
     
@@ -95,6 +96,8 @@ def test(cfg, output_dir, isCPU=False):
 
     # step: 3 build data loader
     test_data_loader = build_data_loader(cfg, mode="test")
+
+
     start_time = time.time()
     test_model(model,
                image_scales=cfg.MODEL.TEST.IMG_SCALES,

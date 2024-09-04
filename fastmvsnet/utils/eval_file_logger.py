@@ -106,7 +106,7 @@ def get_pixel_grids_np(height, width):
     x_coordinates, y_coordinates = np.meshgrid(x_linspace, y_linspace)
     x_coordinates = np.reshape(x_coordinates, (1, -1))
     y_coordinates = np.reshape(y_coordinates, (1, -1))
-    ones = np.ones_like(x_coordinates).astype(np.float)
+    ones = np.ones_like(x_coordinates).astype(np.float64)
     grid = np.concatenate([x_coordinates, y_coordinates, ones], axis=0)
 
     return grid

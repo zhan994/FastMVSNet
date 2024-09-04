@@ -158,8 +158,9 @@ class DTU_Train_Val_Set(Dataset):
 """
 class DTU_Test_Set(Dataset):
     # 数据集合 & 7种光照
-    test_set = [1, 4, 9, 10, 11, 12, 13, 15, 23, 24, 29, 32, 33, 34, 48, 49, 62, 75, 77,
-                110, 114, 118]
+    # test_set = [1, 4, 9, 10, 11, 12, 13, 15, 23, 24, 29, 32, 33, 34, 48, 49, 62, 75, 77,
+    #             110, 114, 118]
+    test_set = [1, 4]
     test_lighting_set = [3]
 
     mean = torch.tensor([1.97145182, -1.52387525, 651.07223895])
@@ -183,6 +184,7 @@ class DTU_Test_Set(Dataset):
         self.base_image_size = base_image_size
         self.height = height
         self.width = width
+        print("dataset init: ", height, width)
         self.depth_folder = depth_folder  
 
         # step: 读取pair.txt中的ref信息
@@ -280,7 +282,7 @@ class DTU_Test_Set(Dataset):
                 depth_images.append(depth_image)
         else:
             for depth_path in paths["view_depth_paths"]:
-                depth_images.append(np.zeros((self.height, self.width), np.float))
+                depth_images.append(np.zeros((self.height, self.width), np.float64))
 
         ref_depth = depth_images[0].copy()
 
@@ -304,6 +306,8 @@ class DTU_Test_Set(Dataset):
                                                                base_image_size=self.base_image_size,
                                                                depth_image=ref_depth)
         ref_image = croped_images[0].copy()
+        # print("ref_img shape", ref_image.shape[:2])
+        # print("ref_cam intrinsic", croped_cams[1])
 
         # step: 归一化
         for i, image in enumerate(croped_images):

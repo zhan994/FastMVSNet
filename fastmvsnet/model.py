@@ -33,6 +33,7 @@ class FastMVSNet(nn.Module):
         preds = collections.OrderedDict()
         img_list = data_batch["img_list"]
         cam_params_list = data_batch["cam_params_list"]
+        print("cam_params_list shape: ", cam_params_list.shape)
 
         # step: 内外参
         cam_extrinsic = cam_params_list[:, :, 0, :3, :4].clone()  # (B, V, 3, 4)
@@ -40,9 +41,12 @@ class FastMVSNet(nn.Module):
         t = cam_extrinsic[:, :, :3, 3].unsqueeze(-1)
         R_inv = torch.inverse(R)
         cam_intrinsic = cam_params_list[:, :, 1, :3, :3].clone()
+        print("cam_intrinsic shape: ", cam_intrinsic.shape)
+        print("ref cam_intrinsic: ", cam_intrinsic[0, 0, :, :])
 
         if isTest:
             cam_intrinsic[:, :, :2, :3] = cam_intrinsic[:, :, :2, :3] / 4.0
+        print("test ref cam_intrinsic: ", cam_intrinsic[0, 0, :, :])
 
         # step: 深度范围
         depth_start = cam_params_list[:, 0, 1, 3, 0]
@@ -52,7 +56,7 @@ class FastMVSNet(nn.Module):
         depth_end = depth_start + (num_depth - 1) * depth_interval
 
         batch_size, num_view, img_channel, img_height, img_width = list(img_list.size())
-
+        print(batch_size, num_view, img_channel, img_height, img_width)
         # step: 2d特征图
         coarse_feature_maps = []
         for i in range(num_view):
@@ -61,6 +65,7 @@ class FastMVSNet(nn.Module):
             coarse_feature_maps.append(curr_feature_map)
 
         feature_list = torch.stack(coarse_feature_maps, dim=1) # (B, V, Cf, H/4, W/4)
+        print("feature list shape: ", feature_list.shape)
 
         feature_channels, feature_height, feature_width = list(curr_feature_map.size())[1:]
 
@@ -70,16 +75,21 @@ class FastMVSNet(nn.Module):
             depths.append(torch.linspace(depth_start[i], depth_end[i], num_depth, device=img_list.device) \
                           .view(1, 1, num_depth, 1))
         depths = torch.stack(depths, dim=0)  # (B, 1, 1, D, 1)
+        print("depths shape: ", depths.shape)
 
         # step: feature_map采样uv
         feature_map_indices_grid = get_pixel_grids(feature_height, feature_width) # (3, FH*FW)
-        # print("before:", feature_map_indices_grid.size())
+        print("before:", feature_map_indices_grid.size())
         feature_map_indices_grid = feature_map_indices_grid.view(1, 3, feature_height, feature_width)[:, :, ::2, ::2].contiguous() # (1, 3, FH/2, FW/2)
-        # print("after:", feature_map_indices_grid.size())
+        print("after:", feature_map_indices_grid.size())
         feature_map_indices_grid = feature_map_indices_grid.view(1, 1, 3, -1).expand(batch_size, 1, 3, -1).to(img_list.device) # (B, 1, 3, FH*FW/4)
+        print("feature_map_indices_grid shape: ", feature_map_indices_grid.shape)
+        print("feature_map_indices_grid: ", feature_map_indices_grid)
 
         # step: 归一化相机坐标系的uv
         ref_cam_intrinsic = cam_intrinsic[:, 0, :, :].clone()
+        print("ref_cam_intrinsic shape: ", ref_cam_intrinsic.shape)
+        print("ref_cam_intrinsic: ", ref_cam_intrinsic)
         uv = torch.matmul(torch.inverse(ref_cam_intrinsic).unsqueeze(1), feature_map_indices_grid)  # (B, 1, 3, FH*FW/4)
 
         # step: 相机坐标系的点 & 世界坐标系的点
@@ -106,26 +116,35 @@ class FastMVSNet(nn.Module):
         avg_point_features_2 = torch.mean(point_features ** 2, dim=1)
 
         point_features = avg_point_features_2 - (avg_point_features ** 2)
+        # print("point_feat shape: ", point_features.shape)
 
         cost_volume = point_features.view(batch_size, feature_channels, num_depth, feature_height // 2, feature_width // 2)
+        # print("cost_volume shape: ", cost_volume.shape)
 
         filtered_cost_volume = self.coarse_vol_conv(cost_volume).squeeze(1)
+        # print("filtered_cost_volume shape: ", filtered_cost_volume.shape)
 
         probability_volume = F.softmax(-filtered_cost_volume, dim=1)
+        # print("probability_volume shape: ", probability_volume.shape)
         depth_volume = []
         for i in range(batch_size):
             depth_array = torch.linspace(depth_start[i], depth_end[i], num_depth, device=depth_start.device)
             depth_volume.append(depth_array)
         depth_volume = torch.stack(depth_volume, dim=0)  # (B, D)
+        # print("depth_volume shape: ", depth_volume.shape)
         depth_volume = depth_volume.view(batch_size, num_depth, 1, 1).expand(probability_volume.shape)
         pred_depth_img = torch.sum(depth_volume * probability_volume, dim=1).unsqueeze(1)  # (B, 1, FH, FW)
+        # print("pred_depth_img shape: ", pred_depth_img.shape)
 
         prob_map = get_propability_map(probability_volume, pred_depth_img, depth_start, depth_interval)
-
+        print("prob_map shape: ", prob_map.shape)
         # image guided depth map propagation
         pred_depth_img = F.interpolate(pred_depth_img, (feature_height, feature_width), mode="nearest")
         prob_map = F.interpolate(prob_map, (feature_height, feature_width), mode="bilinear")
+        print("intep pred_depth_img shape: ", pred_depth_img.shape)
+
         pred_depth_img = self.propagation_net(pred_depth_img, img_list[:, 0, :, :, :])
+        print("propagation_net pred_depth_img shape: ", pred_depth_img.shape)
 
         preds["coarse_depth_map"] = pred_depth_img
         preds["coarse_prob_map"] = prob_map
@@ -167,12 +186,14 @@ class FastMVSNet(nn.Module):
 
                 # GN step
                 cam_intrinsic = cam_params_list[:, :, 1, :3, :3].clone()
+                # print("gn intrin: ", cam_intrinsic)
                 if isTest:
                     cam_intrinsic[:, :, :2, :3] *= image_scale
                 else:
                     cam_intrinsic[:, :, :2, :3] *= (4 * image_scale)
 
                 ref_cam_intrinsic = cam_intrinsic[:, 0, :, :].clone()
+                print("gn ref_cam_intrinsic", ref_cam_intrinsic)
                 feature_map_indices_grid = get_pixel_grids(flow_height, flow_width) \
                     .view(1, 1, 3, -1).expand(batch_size, 1, 3, -1).to(img_list.device)
 

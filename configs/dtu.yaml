@@ -1,12 +1,12 @@
 DATA:
   TRAIN:
-    ROOT_DIR: "data/dtu2"
+    ROOT_DIR: "data/dtu"
     NUM_VIRTUAL_PLANE: 48
     INTER_SCALE: 4.24
   VAL:
     ROOT_DIR: "data/dtu"
   TEST:
-    ROOT_DIR: "data/dtu2"
+    ROOT_DIR: "data/dtu"
     NUM_VIEW: 5
     IMG_HEIGHT: 960
     IMG_WIDTH: 1280
@@ -33,10 +33,10 @@ SOLVER:
   WEIGHT_DECAY: 0.001
   TYPE: 'RMSprop'
 TRAIN:
-  BATCH_SIZE: 16
+  BATCH_SIZE: 2
   CHECKPOINT_PERIOD: 1
   LOG_PERIOD: 10
 TEST:
-  WEIGHT: "outputs/dtu_wde3/model_016.pth"
+  WEIGHT: "outputs/pretrained.pth"
 
 
