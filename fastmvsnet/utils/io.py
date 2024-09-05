@@ -114,6 +114,7 @@ def load_pfm(file):
 
 
 def write_pfm(file, image, scale=1):
+    fn = file
     file = open(file, mode='wb')
     color = None
 
@@ -121,6 +122,7 @@ def write_pfm(file, image, scale=1):
         raise Exception('Image dtype must be float32.')
 
     image = np.flipud(image)
+    print(fn, " write_pfm shape: ", image.shape)
 
     if len(image.shape) == 3 and image.shape[2] == 3:  # color image
         color = True

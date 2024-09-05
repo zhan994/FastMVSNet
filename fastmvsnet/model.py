@@ -170,7 +170,7 @@ class FastMVSNet(nn.Module):
 
             def gn_update(estimated_depth_map, interval, image_scale, it):
                 nonlocal chosen_conv
-                # print(estimated_depth_map.size(), image_scale)
+                print("gn_update:", estimated_depth_map.size(), image_scale)
                 flow_height, flow_width = list(estimated_depth_map.size())[2:]
                 if flow_height != int(img_height * image_scale):
                     flow_height = int(img_height * image_scale)
@@ -280,6 +280,7 @@ class FastMVSNet(nn.Module):
                 flow = gn_update(pred_depth_img, inter_scale* depth_interval, img_scale, i)
                 preds["flow{}".format(i+1)] = flow
                 pred_depth_img = flow
+                print("gn pred_depth_img shape:", pred_depth_img.shape)
 
         return preds
 

@@ -59,13 +59,13 @@ class FeatureFetcher(nn.Module):
             grid = (uv - 0.5).view(curr_batch_size, num_pts, 1, 2)  
             grid[..., 0] = (grid[..., 0] / float(width - 1)) * 2 - 1.0
             grid[..., 1] = (grid[..., 1] / float(height - 1)) * 2 - 1.0
-            print("sample_grid: ", grid)
+            # print("sample_grid: ", grid)
 
         # pts_feature = F.grid_sample(feature_maps, grid, mode=self.mode, padding_mode='border')
         # print("without border pad-----------------------")
         # step: pts对应feature的采样值
         pts_feature = F.grid_sample(feature_maps, grid, mode=self.mode) # (B*V, C, N, 1)
-        print("sampled pts_feature: ", pts_feature)
+        # print("sampled pts_feature: ", pts_feature)
         pts_feature = pts_feature.squeeze(3) # (B*V, C, N)
         pts_feature = pts_feature.view(batch_size, num_view, channels, num_pts) # (B, V, C, N)
 
