@@ -161,7 +161,9 @@ class FastMVSNet(nn.Module):
                     feature_pyramids[conv].append(curr_feature_pyramid[conv])
 
             for conv in chosen_conv:
+                print("conv feature_pyramids before stack: ", len(feature_pyramids[conv]), feature_pyramids[conv][0].shape)
                 feature_pyramids[conv] = torch.stack(feature_pyramids[conv], dim=1)
+                print("conv feature_pyramids after stack: ", feature_pyramids[conv].shape)
 
             if isTest:
                 for conv in chosen_conv:
@@ -196,16 +198,24 @@ class FastMVSNet(nn.Module):
                 print("gn ref_cam_intrinsic", ref_cam_intrinsic)
                 feature_map_indices_grid = get_pixel_grids(flow_height, flow_width) \
                     .view(1, 1, 3, -1).expand(batch_size, 1, 3, -1).to(img_list.device)
+                print("gn feature_map shape: ", feature_map_indices_grid.shape)
 
                 uv = torch.matmul(torch.inverse(ref_cam_intrinsic).unsqueeze(1),
                                   feature_map_indices_grid)  # (B, 1, 3, FH*FW)
+                print("gn uv.shape: ", uv.shape)
 
+                # note: R_inv === Rwc
                 interval_depth_map = estimated_depth_map
+                print("gn interval_depth shape: ", interval_depth_map.shape)
                 cam_points = (uv * interval_depth_map.view(batch_size, 1, 1, -1))
-                world_points = torch.matmul(R_inv[:, 0:1, :, :], cam_points - t[:, 0:1, :, :]).transpose(1, 2) \
-                    .contiguous().view(batch_size, 3, -1)  # (B, 3, D*FH*FW)
+                print(cam_points.shape)
+                world_points = torch.matmul(R_inv[:, 0:1, :, :], cam_points - t[:, 0:1, :, :])
+                print("gn world_points shape0: ", world_points.shape)
+                world_points = world_points.transpose(1, 2).contiguous().view(batch_size, 3, -1)  # (B, 3, FH*FW)
+                print("gn world_points shape: ", world_points.shape)
 
                 grad_pts = self.point_grad_fetcher(world_points, cam_intrinsic, cam_extrinsic)
+                print("gn grad pts shape: ", grad_pts.shape)
 
                 R_tar_ref = torch.bmm(R.view(batch_size * num_view, 3, 3),
                                       R_inv[:, 0:1, :, :].repeat(1, num_view, 1, 1).view(batch_size * num_view, 3, 3))
@@ -226,6 +236,7 @@ class FastMVSNet(nn.Module):
                     all_features.append(curr_feature)
 
                 all_features = torch.cat(all_features, dim=2)
+                print("gn all_features shape: ", all_features.shape)
 
                 if isTest:
                     point_features, point_features_grad = \
